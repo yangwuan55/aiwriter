@@ -16,6 +16,7 @@ class NovelGenerator:
         """
         self.config = config
         self.base_url = f"{config['ai_settings']['host']}:{config['ai_settings']['port']}"
+        logger.info(f"初始化生成器 - 模型: {config['ai_settings']['model']}, 温度: {config['ai_settings']['temperature']}")
         
         # 创建带有重试机制的会话
         self.session = requests.Session()
@@ -25,9 +26,11 @@ class NovelGenerator:
             status_forcelist=[500, 502, 503, 504]  # 需要重试的HTTP状态码
         )
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
+        logger.debug("已配置重试机制：最大重试3次，间隔1秒")
         
         # 创建输出目录
         os.makedirs(config['output_settings']['save_path'], exist_ok=True)
+        logger.info(f"输出目录: {config['output_settings']['save_path']}")
         
     def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
         """
@@ -43,6 +46,8 @@ class NovelGenerator:
         try:
             # 构建完整的提示词
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            prompt_length = len(full_prompt)
+            logger.debug(f"提示词长度: {prompt_length} 字符")
             
             # 准备请求数据
             data = {
@@ -57,6 +62,7 @@ class NovelGenerator:
             }
             
             # 发送请求
+            logger.debug("开始调用Ollama API...")
             response = self.session.post(
                 f"{self.base_url}/api/generate",
                 json=data,
@@ -66,10 +72,12 @@ class NovelGenerator:
             
             # 解析响应
             result = response.json()
+            response_length = len(result.get('response', ''))
+            logger.debug(f"API调用成功，响应长度: {response_length} 字符")
             return result.get('response', '')
             
         except requests.exceptions.Timeout:
-            logger.error("调用Ollama API超时")
+            logger.error("调用Ollama API超时（5分钟）")
             raise
         except requests.exceptions.RequestException as e:
             logger.error(f"调用Ollama API失败: {str(e)}")
@@ -82,11 +90,12 @@ class NovelGenerator:
         Returns:
             故事大纲
         """
-        logger.info("正在生成故事大纲...")
+        logger.info("开始生成故事大纲...")
         system_prompt = prompts.get_system_prompt(self.config)
         outline_prompt = prompts.get_outline_prompt(self.config)
         
         outline = self._call_ollama(system_prompt, outline_prompt)
+        logger.info(f"大纲生成完成，长度: {len(outline)} 字符")
         
         # 保存大纲
         if self.config['output_settings']['generate_outline']:
@@ -96,6 +105,7 @@ class NovelGenerator:
             )
             with open(outline_path, 'w', encoding='utf-8') as f:
                 f.write(outline)
+            logger.info(f"大纲已保存至: {outline_path}")
                 
         return outline
         
@@ -106,11 +116,12 @@ class NovelGenerator:
         Returns:
             人物设定
         """
-        logger.info("正在生成人物设定...")
+        logger.info("开始生成人物设定...")
         system_prompt = prompts.get_system_prompt(self.config)
         character_prompt = prompts.get_character_prompt(self.config)
         
         characters = self._call_ollama(system_prompt, character_prompt)
+        logger.info(f"人物设定生成完成，长度: {len(characters)} 字符")
         
         # 保存人物设定
         if self.config['output_settings']['generate_character_profiles']:
@@ -120,6 +131,7 @@ class NovelGenerator:
             )
             with open(char_path, 'w', encoding='utf-8') as f:
                 f.write(characters)
+            logger.info(f"人物设定已保存至: {char_path}")
                 
         return characters
         
@@ -134,7 +146,7 @@ class NovelGenerator:
         Returns:
             小说内容
         """
-        logger.info("正在生成小说内容...")
+        logger.info("开始生成小说内容...")
         system_prompt = prompts.get_system_prompt(self.config)
         content_prompt = prompts.get_content_prompt(self.config, outline, characters)
         
@@ -142,11 +154,12 @@ class NovelGenerator:
         sections = ['开篇', '发展', '高潮', '结局']
         content_parts = []
         
-        for section in sections:
-            logger.info(f"正在生成{section}部分...")
+        for i, section in enumerate(sections, 1):
+            logger.info(f"正在生成第{i}/4部分：{section}...")
             section_prompt = f"{content_prompt}\n\n当前需要生成的是故事的{section}部分。"
             section_content = self._call_ollama(system_prompt, section_prompt)
             content_parts.append(section_content)
+            logger.info(f"{section}部分生成完成，长度: {len(section_content)} 字符")
             
             # 每生成一部分就保存一次，避免丢失内容
             title = self.config['novel_settings']['title']
@@ -157,6 +170,7 @@ class NovelGenerator:
             )
             with open(temp_path, 'w', encoding='utf-8') as f:
                 f.write(current_content)
+            logger.debug(f"已保存临时文件: {temp_path}")
         
         # 生成完成后，保存最终版本
         title = self.config['novel_settings']['title']
@@ -167,6 +181,8 @@ class NovelGenerator:
         )
         with open(content_path, 'w', encoding='utf-8') as f:
             f.write(full_content)
+        logger.success(f"小说内容生成完成！总长度: {len(full_content)} 字符")
+        logger.info(f"最终文件已保存至: {content_path}")
             
         return full_content
         
@@ -174,6 +190,11 @@ class NovelGenerator:
         """
         生成完整的小说
         """
+        logger.info(f"开始生成小说：{self.config['novel_settings']['title']}")
+        logger.info(f"类型：{self.config['novel_settings']['genre']}")
+        logger.info(f"主题：{self.config['novel_settings']['theme']}")
+        logger.info(f"目标字数：{self.config['novel_settings']['word_count']}")
+        
         # 生成大纲
         outline = self.generate_outline()
         
@@ -181,4 +202,6 @@ class NovelGenerator:
         characters = self.generate_characters()
         
         # 生成小说内容
-        self.generate_content(outline, characters) 
+        self.generate_content(outline, characters)
+        
+        logger.success("小说生成完成！") 
