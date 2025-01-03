@@ -1,9 +1,9 @@
 # AI配置
 ai_settings:
-  model: "llama3.2"
+  model: "mistral"
   host: "http://localhost"
   port: 11434
-  temperature: 0.3
+  temperature: 0.5
   context_size: 8192
   num_predict: 3000
 
