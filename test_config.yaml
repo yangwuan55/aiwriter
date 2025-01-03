@@ -1,67 +1,59 @@
 # AI配置
 ai_settings:
-  model: "qwen2.5:14b"
   host: "http://localhost"
   port: 11434
+  model: "qwen2.5:14b"
   temperature: 0.7
-  context_size: 30000
-  num_predict: 3000
+  context_size: 30960
+  num_predict: 10048
 
 # 作者角色设定
 author_profile:
-  role: "青春文学作家"
-  language: "中文"
-  version: "0.2"
-  description: "专注于创作虐心言情小说，擅长描写年轻人的情感纠葛和心理变化"
+  role: "资深网络小说作家"
+  description: "擅长创作青春言情小说，文笔细腻，善于描写人物心理和情感变化。"
 
 # 写作偏好
 preferences:
-  - "善于营造压抑而唯美的氛围"
-  - "擅长描写细腻的心理活动"
-  - "偏爱残酷而现实的情节设计"
-  - "注重意象和隐喻的运用"
-  - "善用华丽而感伤的文字"
-  - "热衷于描写都市青年的情感挣扎"
+  - "注重人物内心世界的刻画"
+  - "善用细节描写烘托氛围"
+  - "对话要自然生动"
+  - "情节要合理且有张力"
+  - "感情描写要细腻真实"
 
 # 写作手法
 writing_style:
-  narrative_perspective: "第一人称"
-  tense: "现在时"
-  tone: "忧伤"
+  narrative_perspective: "第三人称全知"
+  tense: "过去时"
+  tone: "温暖治愈"
+  dialogue_style: "自然流畅"
   narrative_technique:
-    - "意识流"
-    - "闪回"
-    - "心理独白"
-    - "意象象征"
-    - "多线叙事"
-  dialogue_style: "情感化"
+    - "倒叙"
+    - "心理描写"
+    - "场景描写"
+    - "细节刻画"
   description_focus:
-    - "心理活动"
+    - "人物心理"
     - "情感变化"
     - "环境氛围"
-    - "细节刻画"
 
 # 小说设定
 novel_settings:
   title: "暗恋无声"
-  genre: "虐心言情"
-  word_count: 8000
-  theme: "纯粹的爱情与现实的残酷"
-  target_audience: "青年读者"
-  style_reference: "郭敬明《小时代》系列"
+  genre: "青春言情"
+  theme: "校园暗恋"
+  target_audience: "年轻女性读者"
+  word_count: 10000
+  style_reference: "张悦然"
 
 # 输出设置
 output_settings:
-  format: "markdown"
-  save_path: "./test_output"
-  generate_outline: true
-  generate_character_profiles: true
-  novel_count: 6  # 生成3篇小说选最好的
+  output_dir: "output"
+  novel_count: 2
 
 # 重写设置
 rewrite_settings:
-  outline_rewrites: 2    # 大纲重写次数
-  character_rewrites: 2  # 人物设定重写次数
-  content_rewrites: 2    # 内容重写次数（每个部分）
-  final_rewrites: 2      # 最终重写次数（完整小说）
-  final_rewrite_min_score: 0.85  # 提高最终重写的最低评分要求 
+  outline_rewrites: 2
+  character_rewrites: 2
+  content_rewrites: 1
+  final_rewrites: 1
+  final_rewrite_min_score: 0.8 

@@ -1,97 +1,38 @@
-import os
-from typing import Dict, Any
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from typing import Dict, Any, Tuple
 from loguru import logger
-from . import prompts
+from ..utils.api_utils import OllamaAPI
+from ..utils.file_utils import save_content, get_unique_filename
+from .. import prompts
 
-class NovelGenerator:
-    def __init__(self, config: Dict[str, Any]):
+class NovelWriter:
+    def __init__(self, config: Dict[str, Any], api_client: OllamaAPI):
         """
-        初始化小说生成器
+        初始化小说写作器
         
         Args:
             config: 配置字典
+            api_client: API客户端
         """
         self.config = config
-        self.base_url = f"{config['ai_settings']['host']}:{config['ai_settings']['port']}"
-        logger.info(f"初始化生成器 - 模型: {config['ai_settings']['model']}, 温度: {config['ai_settings']['temperature']}")
+        self.api_client = api_client
         
-        # 创建带有重试机制的会话
-        self.session = requests.Session()
-        retries = Retry(
-            total=3,  # 最大重试次数
-            backoff_factor=1,  # 重试间隔
-            status_forcelist=[500, 502, 503, 504]  # 需要重试的HTTP状态码
-        )
-        self.session.mount('http://', HTTPAdapter(max_retries=retries))
-        logger.debug("已配置重试机制：最大重试3次，间隔1秒")
-        
-        # 创建输出目录
-        os.makedirs(config['output_settings']['save_path'], exist_ok=True)
-        logger.info(f"输出目录: {config['output_settings']['save_path']}")
-        
-    def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
+    def _get_rewrite_feedback(self, content_type: str, content: str) -> str:
         """
-        调用Ollama API
+        获取重写反馈
         
         Args:
-            system_prompt: 系统提示词
-            user_prompt: 用户提示词
+            content_type: 内容类型（outline/characters/content）
+            content: 需要获取反馈的内容
             
         Returns:
-            API响应内容
+            反馈内容
         """
         try:
-            # 构建完整的提示词
-            full_prompt = f"{system_prompt}\n\n{user_prompt}"
-            prompt_length = len(full_prompt)
-            logger.debug(f"提示词长度: {prompt_length} 字符")
-            
-            # 准备请求数据
-            data = {
-                "model": self.config['ai_settings']['model'],
-                "prompt": full_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": self.config['ai_settings']['temperature'],
-                    "num_ctx": self.config['ai_settings']['context_size'],
-                    "num_predict": self.config['ai_settings']['num_predict']
-                }
-            }
-            
-            # 发送请求
-            logger.debug("开始调用Ollama API...")
-            response = self.session.post(
-                f"{self.base_url}/api/generate",
-                json=data,
-                timeout=300  # 设置5分钟超时
-            )
-            response.raise_for_status()
-            
-            # 解析响应
-            result = response.json()
-            response_length = len(result.get('response', ''))
-            logger.debug(f"API调用成功，响应长度: {response_length} 字符")
-            return result.get('response', '')
-            
-        except requests.exceptions.Timeout:
-            logger.error("调用Ollama API超时（5分钟）")
-            raise
-        except requests.exceptions.RequestException as e:
-            logger.error(f"调用Ollama API失败: {str(e)}")
-            raise
-            
-    def _get_rewrite_feedback(self, content_type: str, content: str) -> str:
-        """获取重写反馈"""
-        try:
             logger.info(f"正在获取{content_type}的重写反馈...")
-            system_prompt = prompts.get_rewrite_feedback_prompt()
-            user_prompt = prompts.get_rewrite_user_prompt(content_type, content)
-            response = self._call_ollama(system_prompt, user_prompt)
-            logger.debug(f"获取到的反馈内容：\n{response}")
-            return response
+            system_prompt = prompts.rewrite.get_rewrite_feedback_prompt(content_type)
+            user_prompt = prompts.rewrite.get_rewrite_user_prompt(content_type, content)
+            feedback = self.api_client.generate(system_prompt, user_prompt)
+            return feedback
         except Exception as e:
             logger.error(f"获取重写反馈时发生错误: {str(e)}")
             return ""
@@ -124,7 +65,7 @@ class NovelGenerator:
         except Exception as e:
             logger.error(f"评估反馈质量时发生错误: {str(e)}")
             return 0.0
-
+            
     def generate_outline(self) -> str:
         """生成故事大纲"""
         logger.info("开始生成故事大纲...")
@@ -144,11 +85,11 @@ class NovelGenerator:
                 for line in best_feedback.split('\n'):
                     logger.info(f"  {line}")
             
-            system_prompt = prompts.get_outline_prompt(self.config)
+            system_prompt = prompts.story.get_outline_prompt(self.config)
             if i > 0:  # 在提示词中加入上一次的反馈
                 system_prompt += f"\n\n参考以下修改建议：\n{best_feedback}"
             
-            outline = self._call_ollama(system_prompt, "")
+            outline = self.api_client.generate(system_prompt, "")
             logger.info(f"第{i if i > 0 else '初始'}版本大纲生成完成，长度: {len(outline)} 字符")
             
             if i < max_rewrites:  # 获取反馈用于下一次重写
@@ -166,15 +107,16 @@ class NovelGenerator:
                 best_outline = outline
                 logger.info("完成所有重写，使用最终版本")
         
+        # 获取不重复的大纲文件路径
+        outline_base_path = os.path.join(self.config['output_settings']['save_path'], 'outline.md')
+        outline_path = get_unique_filename(outline_base_path)
+        
         # 保存最终版本
-        outline_path = os.path.join(self.config['output_settings']['save_path'], 'outline.md')
-        with open(outline_path, 'w', encoding='utf-8') as f:
-            f.write(best_outline)
-        logger.success(f"大纲已保存至: {outline_path}")
+        save_content(best_outline, outline_path)
         
         return best_outline
         
-    def generate_characters(self) -> str:
+    def generate_characters(self, outline: str) -> str:
         """生成人物设定"""
         logger.info("开始生成人物设定...")
         
@@ -193,11 +135,11 @@ class NovelGenerator:
                 for line in best_feedback.split('\n'):
                     logger.info(f"  {line}")
             
-            system_prompt = prompts.get_character_prompt(self.config)
+            system_prompt = prompts.character.get_character_prompt(self.config, outline)
             if i > 0:  # 在提示词中加入上一次的反馈
                 system_prompt += f"\n\n参考以下修改建议：\n{best_feedback}"
             
-            characters = self._call_ollama(system_prompt, "")
+            characters = self.api_client.generate(system_prompt, "")
             logger.info(f"第{i if i > 0 else '初始'}版本人物设定生成完成，长度: {len(characters)} 字符")
             
             if i < max_rewrites:  # 获取反馈用于下一次重写
@@ -215,11 +157,12 @@ class NovelGenerator:
                 best_characters = characters
                 logger.info("完成所有重写，使用最终版本")
         
+        # 获取不重复的人物设定文件路径
+        characters_base_path = os.path.join(self.config['output_settings']['save_path'], 'characters.md')
+        characters_path = get_unique_filename(characters_base_path)
+        
         # 保存最终版本
-        characters_path = os.path.join(self.config['output_settings']['save_path'], 'characters.md')
-        with open(characters_path, 'w', encoding='utf-8') as f:
-            f.write(best_characters)
-        logger.success(f"人物设定已保存至: {characters_path}")
+        save_content(best_characters, characters_path)
         
         return best_characters
         
@@ -252,7 +195,7 @@ class NovelGenerator:
                         logger.info(f"  {line}")
                 
                 # 构建提示词，包含已生成的内容作为上下文
-                system_prompt = prompts.get_content_prompt(
+                system_prompt = prompts.story.get_content_prompt(
                     self.config,
                     outline,
                     characters,
@@ -262,7 +205,7 @@ class NovelGenerator:
                 if i > 0:  # 在提示词中加入上一次的反馈
                     system_prompt += f"\n\n参考以下修改建议：\n{best_feedback}"
                 
-                current_part = self._call_ollama(system_prompt, "")
+                current_part = self.api_client.generate(system_prompt, "")
                 logger.info(f"第{i if i > 0 else '初始'}版本{part_name}生成完成，长度: {len(current_part)} 字符")
                 
                 # 存储当前版本
@@ -292,15 +235,13 @@ class NovelGenerator:
             content += best_version['content'] + "\n\n"
             
             # 保存临时文件
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            logger.debug(f"已保存临时文件: {temp_path}")
+            save_content(content, temp_path)
         
         logger.success(f"小说内容生成完成！总长度: {len(content)} 字符")
         
         return content
         
-    def _final_rewrite(self, outline: str, characters: str, content: str) -> tuple[str, float]:
+    def final_rewrite(self, outline: str, characters: str, content: str) -> Tuple[str, float]:
         """
         最终重写并评分
         
@@ -315,9 +256,9 @@ class NovelGenerator:
             if max_rewrites == 0:
                 logger.info("未配置最终重写，直接进行评分...")
                 # 对原文进行评分
-                system_prompt = prompts.get_rating_prompt()
-                user_prompt = prompts.get_rating_user_prompt(content)
-                rating_result = self._call_ollama(system_prompt, user_prompt)
+                system_prompt = prompts.base.get_rating_prompt()
+                user_prompt = prompts.base.get_rating_user_prompt(content)
+                rating_result = self.api_client.generate(system_prompt, user_prompt)
                 try:
                     score = float(rating_result.split('总分：')[1].split('/')[0])
                 except:
@@ -335,9 +276,9 @@ class NovelGenerator:
                 logger.info(f"开始第{i+1}/{max_rewrites}次最终重写...")
                 
                 # 获取分析结果
-                system_prompt = prompts.get_final_rewrite_prompt()
-                user_prompt = prompts.get_final_rewrite_user_prompt(outline, characters, best_content)
-                analysis = self._call_ollama(system_prompt, user_prompt)
+                system_prompt = prompts.rewrite.get_final_rewrite_prompt()
+                user_prompt = prompts.rewrite.get_final_rewrite_user_prompt(outline, characters, best_content)
+                analysis = self.api_client.generate(system_prompt, user_prompt)
                 
                 logger.info("获取到的分析结果：")
                 for line in analysis.split('\n'):
@@ -353,13 +294,13 @@ class NovelGenerator:
                     
                 # 根据分析结果重写
                 logger.info("开始根据分析结果重写...")
-                system_prompt = prompts.get_final_rewrite_fix_prompt(best_content, analysis)
-                new_content = self._call_ollama(system_prompt, "")
+                system_prompt = prompts.rewrite.get_final_rewrite_fix_prompt(best_content, analysis)
+                new_content = self.api_client.generate(system_prompt, "")
                 
                 # 对重写结果进行评分
-                system_prompt = prompts.get_rating_prompt()
-                user_prompt = prompts.get_rating_user_prompt(new_content)
-                rating_result = self._call_ollama(system_prompt, user_prompt)
+                system_prompt = prompts.base.get_rating_prompt()
+                user_prompt = prompts.base.get_rating_user_prompt(new_content)
+                rating_result = self.api_client.generate(system_prompt, user_prompt)
                 try:
                     new_score = float(rating_result.split('总分：')[1].split('/')[0])
                 except:
@@ -381,9 +322,9 @@ class NovelGenerator:
                 return best_content, best_score
             else:
                 # 如果没有找到更好的版本，对原文进行评分
-                system_prompt = prompts.get_rating_prompt()
-                user_prompt = prompts.get_rating_user_prompt(content)
-                rating_result = self._call_ollama(system_prompt, user_prompt)
+                system_prompt = prompts.base.get_rating_prompt()
+                user_prompt = prompts.base.get_rating_user_prompt(content)
+                rating_result = self.api_client.generate(system_prompt, user_prompt)
                 try:
                     score = float(rating_result.split('总分：')[1].split('/')[0])
                 except:
@@ -397,81 +338,69 @@ class NovelGenerator:
             logger.exception("详细错误信息：")
             # 发生错误时对原文进行评分
             try:
-                system_prompt = prompts.get_rating_prompt()
-                user_prompt = prompts.get_rating_user_prompt(content)
-                rating_result = self._call_ollama(system_prompt, user_prompt)
+                system_prompt = prompts.base.get_rating_prompt()
+                user_prompt = prompts.base.get_rating_user_prompt(content)
+                rating_result = self.api_client.generate(system_prompt, user_prompt)
                 score = float(rating_result.split('总分：')[1].split('/')[0])
             except:
                 score = 0
                 logger.warning("解析评分失败，设置为0分")
-            return content, score
+            return content, score 
 
-    def generate(self):
-        """生成完整的小说"""
-        logger.info(f"开始生成小说：{self.config['novel_settings']['title']}")
-        logger.info(f"类型：{self.config['novel_settings']['genre']}")
-        logger.info(f"主题：{self.config['novel_settings']['theme']}")
-        logger.info(f"目标字数：{self.config['novel_settings']['word_count']}")
+    def _parse_rating(self, rating_result: str) -> float:
+        """
+        解析评分结果
         
+        Args:
+            rating_result: 评分结果文本
+            
+        Returns:
+            总分（0-1之间的浮点数）
+        """
         try:
-            # 记录所有生成的小说及其评分
-            novels = []
+            # 解析总分
+            total_score = 0.0
             
-            # 生成指定数量的小说
-            novel_count = self.config['output_settings'].get('novel_count', 1)
-            logger.info(f"计划生成{novel_count}篇小说...")
-            
-            for i in range(novel_count):
-                logger.info(f"开始生成第{i+1}/{novel_count}篇小说...")
+            # 解析情节发展分数
+            if '情节发展（' in rating_result:
+                plot_score = float(rating_result.split('情节发展（')[1].split('/')[0])
+                total_score += plot_score
                 
-                # 生成大纲
-                outline = self.generate_outline()
+            # 解析人物塑造分数
+            if '人物塑造（' in rating_result:
+                character_section = rating_result.split('人物塑造（')[1].split('##')[0]
                 
-                # 生成人物设定
-                characters = self.generate_characters()
+                # 解析各个子项分数
+                if '人物性格一致性（' in character_section:
+                    consistency_score = float(character_section.split('人物性格一致性（')[1].split('/')[0])
+                    total_score += consistency_score
+                    
+                if '人物行为合理性（' in character_section:
+                    behavior_score = float(character_section.split('人物行为合理性（')[1].split('/')[0])
+                    total_score += behavior_score
+                    
+                if '人物对话特色（' in character_section:
+                    dialogue_score = float(character_section.split('人物对话特色（')[1].split('/')[0])
+                    total_score += dialogue_score
+                    
+                if '人物成长体现（' in character_section:
+                    growth_score = float(character_section.split('人物成长体现（')[1].split('/')[0])
+                    total_score += growth_score
                 
-                # 生成小说内容
-                content = self.generate_content(outline, characters)
+            # 解析主题表达分数
+            if '主题表达（' in rating_result:
+                theme_score = float(rating_result.split('主题表达（')[1].split('/')[0])
+                total_score += theme_score
                 
-                # 最终重写（包含去重和评分）
-                content, score = self._final_rewrite(outline, characters, content)
+            # 解析写作技巧分数
+            if '写作技巧（' in rating_result:
+                technique_score = float(rating_result.split('写作技巧（')[1].split('/')[0])
+                total_score += technique_score
                 
-                # 保存当前小说
-                current_novel_path = os.path.join(self.config['output_settings']['save_path'], f'{self.config["novel_settings"]["title"]}_{i+1}.md')
-                with open(current_novel_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                
-                # 记录小说信息
-                novels.append({
-                    'path': current_novel_path,
-                    'score': score,
-                    'content': content
-                })
-                
-                logger.info(f"第{i+1}篇小说生成完成，评分：{score}")
-                
-                # 删除临时文件
-                temp_file = os.path.join(self.config['output_settings']['save_path'], f'{self.config["novel_settings"]["title"]}_temp.md')
-                if os.path.exists(temp_file):
-                    try:
-                        os.remove(temp_file)
-                        logger.debug(f"已删除临时文件: {temp_file}")
-                    except Exception as e:
-                        logger.warning(f"删除临时文件失败: {temp_file}, 错误: {str(e)}")
-            
-            # 找出评分最高的小说
-            if novels:
-                best_novel = max(novels, key=lambda x: x['score'])
-                logger.info(f"评分最高的小说：{best_novel['score']}分")
-                
-                # 将最佳小说拷贝到输出目录根目录
-                best_novel_path = os.path.join(self.config['output_settings']['save_path'], f'{self.config["novel_settings"]["title"]}.md')
-                with open(best_novel_path, 'w', encoding='utf-8') as f:
-                    f.write(best_novel['content'])
-                logger.success(f"已将最佳小说保存至: {best_novel_path}")
-            
-            logger.success(f"所有小说生成完成！共生成{len(novels)}篇")
+            # 返回归一化的分数（0-1之间）
+            return total_score / 100.0
             
         except Exception as e:
-            logger.error(f"生成过程中发生错误: {str(e)}")
-            logger.exception("详细错误信息：") 
+            logger.error(f"解析评分结果失败: {str(e)}")
+            logger.error(f"评分结果内容: {rating_result}")
+            return 0.0 
