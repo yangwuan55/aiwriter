@@ -1,6 +1,8 @@
 import os
 from typing import Dict, Any
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from loguru import logger
 from . import prompts
 
@@ -14,6 +16,15 @@ class NovelGenerator:
         """
         self.config = config
         self.base_url = f"{config['ai_settings']['host']}:{config['ai_settings']['port']}"
+        
+        # 创建带有重试机制的会话
+        self.session = requests.Session()
+        retries = Retry(
+            total=3,  # 最大重试次数
+            backoff_factor=1,  # 重试间隔
+            status_forcelist=[500, 502, 503, 504]  # 需要重试的HTTP状态码
+        )
+        self.session.mount('http://', HTTPAdapter(max_retries=retries))
         
         # 创建输出目录
         os.makedirs(config['output_settings']['save_path'], exist_ok=True)
@@ -46,9 +57,10 @@ class NovelGenerator:
             }
             
             # 发送请求
-            response = requests.post(
+            response = self.session.post(
                 f"{self.base_url}/api/generate",
-                json=data
+                json=data,
+                timeout=300  # 设置5分钟超时
             )
             response.raise_for_status()
             
@@ -56,7 +68,10 @@ class NovelGenerator:
             result = response.json()
             return result.get('response', '')
             
-        except Exception as e:
+        except requests.exceptions.Timeout:
+            logger.error("调用Ollama API超时")
+            raise
+        except requests.exceptions.RequestException as e:
             logger.error(f"调用Ollama API失败: {str(e)}")
             raise
             
@@ -133,11 +148,19 @@ class NovelGenerator:
             section_content = self._call_ollama(system_prompt, section_prompt)
             content_parts.append(section_content)
             
-        # 组合所有内容
+            # 每生成一部分就保存一次，避免丢失内容
+            title = self.config['novel_settings']['title']
+            current_content = f"# {title}\n\n" + "\n\n".join(content_parts)
+            temp_path = os.path.join(
+                self.config['output_settings']['save_path'],
+                f"{title}_temp.md"
+            )
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                f.write(current_content)
+        
+        # 生成完成后，保存最终版本
         title = self.config['novel_settings']['title']
         full_content = f"# {title}\n\n" + "\n\n".join(content_parts)
-        
-        # 保存小说内容
         content_path = os.path.join(
             self.config['output_settings']['save_path'],
             f"{title}.md"
