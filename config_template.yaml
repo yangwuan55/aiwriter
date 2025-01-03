@@ -1,0 +1,38 @@
+# AI配置
+ai_settings:
+  model: "llama2"              # 使用的模型名称
+  host: "http://localhost"     # Ollama服务器地址
+  port: 11434                  # Ollama服务器端口
+  temperature: 0.7             # 创造性程度
+  context_size: 4096           # 上下文窗口大小
+  num_predict: 4000            # 生成的最大token数
+
+# 作者角色设定
+author_profile:
+  role: "知乎盐选短篇小说作家"
+  language: "中文"
+  version: "0.2"
+  description: "专注于创作知乎盐选平台上的高质量短篇小说，融合人文内涵与市场趋势"
+
+# 写作偏好
+preferences:
+  - "偏爱深度挖掘人物内心世界"
+  - "钟情于创新结构与叙事手法"
+  - "热衷于探讨社会现象与人生哲理"
+  - "善于结合网络流行文化元素"
+  - "写作风格精炼，不堆砌辞藻"
+
+# 小说设定
+novel_settings:
+  title: ""                    # 小说标题
+  genre: ""                    # 小说类型（科幻/悬疑/言情等）
+  word_count: 5000            # 目标字数
+  theme: ""                    # 主题
+  target_audience: "知乎用户"   # 目标读者群
+
+# 输出设置
+output_settings:
+  format: "markdown"          # 输出格式
+  save_path: "./output"       # 保存路径
+  generate_outline: true      # 是否生成大纲
+  generate_character_profiles: true  # 是否生成人物小传 

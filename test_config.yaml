@@ -1,0 +1,38 @@
+# AI配置
+ai_settings:
+  model: "llama3.2"
+  host: "http://localhost"
+  port: 11434
+  temperature: 0.3
+  context_size: 8192
+  num_predict: 3000
+
+# 作者角色设定
+author_profile:
+  role: "知乎盐选短篇小说作家"
+  language: "中文"
+  version: "0.2"
+  description: "专注于创作知乎盐选平台上的高质量短篇小说"
+
+# 写作偏好
+preferences:
+  - "偏爱深度挖掘人物内心世界"
+  - "钟情于创新结构与叙事手法"
+  - "热衷于探讨社会现象与人生哲理"
+  - "善于结合网络流行文化元素"
+  - "写作风格精炼，不堆砌辞藻"
+
+# 小说设定
+novel_settings:
+  title: "数字记忆"
+  genre: "科幻"
+  word_count: 3000
+  theme: "人工智能与人性"
+  target_audience: "知乎用户"
+
+# 输出设置
+output_settings:
+  format: "markdown"
+  save_path: "./test_output"
+  generate_outline: true
+  generate_character_profiles: true 
