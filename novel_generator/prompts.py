@@ -12,12 +12,25 @@ def get_system_prompt(config: Dict[str, Any]) -> str:
     """
     author = config['author_profile']
     prefs = config['preferences']
+    style = config['writing_style']
+    
+    # 构建叙事技巧描述
+    narrative_techniques = "、".join(style['narrative_technique'])
+    description_focuses = "、".join(style['description_focus'])
     
     prompt = f"""
 你是一位{author['role']}，专注于创作高质量的短篇小说。
 
 写作特点：
 {chr(10).join(f"- {pref}" for pref in prefs)}
+
+写作手法：
+- 采用{style['narrative_perspective']}视角叙述
+- 使用{style['tense']}进行叙述
+- 整体语气{style['tone']}
+- 运用{narrative_techniques}等叙事技巧
+- 对话风格{style['dialogue_style']}
+- 重点描写{description_focuses}
 
 写作要求：
 1. 保持原创性，避免抄袭
@@ -28,6 +41,8 @@ def get_system_prompt(config: Dict[str, Any]) -> str:
 6. 严格使用中文创作，不使用任何英文或其他语言
 7. 避免内容重复，每个段落都要推进故事发展
 8. 保持情节的连贯性和紧凑性
+9. 始终保持{style['narrative_perspective']}的叙述视角
+10. 注重通过{style['description_focus'][0]}的描写展现人物内心世界
 
 语言风格：
 - 精炼不冗长
@@ -115,6 +130,7 @@ def get_content_prompt(config: Dict[str, Any], outline: str, characters: str) ->
         内容创作提示词
     """
     novel = config['novel_settings']
+    style = config['writing_style']
     
     prompt = f"""
 你是一位专业的短篇小说作家，现在需要你创作一个短篇小说的内容。
@@ -124,6 +140,13 @@ def get_content_prompt(config: Dict[str, Any], outline: str, characters: str) ->
 - 类型：{novel['genre']}
 - 主题：{novel['theme']}
 - 目标字数：每个部分约{novel['word_count']//4}字
+
+写作手法：
+- 采用{style['narrative_perspective']}视角叙述
+- 使用{style['tense']}进行叙述
+- 整体语气{style['tone']}
+- 对话风格{style['dialogue_style']}
+- 重点描写人物的{style['description_focus'][0]}
 
 参考资料：
 【故事大纲】
@@ -145,12 +168,14 @@ def get_content_prompt(config: Dict[str, Any], outline: str, characters: str) ->
 10. 避免出现相似或重复的段落
 11. 每个对话都要推动情节发展或揭示人物性格
 12. 注重情感描写的细腻和真实
+13. 始终保持{style['narrative_perspective']}视角
+14. 大量使用内心独白和心理活动描写
 
 格式要求：
 1. 使用markdown格式
 2. 合理分段，每段都要有重点
 3. 对话要使用引号
-4. 重要的内心活动可以使用斜体
+4. 重要的内心活动使用斜体
 
 注意：
 - 每次只生成一个部分的内容
@@ -158,5 +183,6 @@ def get_content_prompt(config: Dict[str, Any], outline: str, characters: str) ->
 - 避免出现重复的描写和对话
 - 控制好每部分的字数
 - 确保全文使用纯中文表达，不混入其他语言
+- 保持第一人称视角的一致性
 """
     return prompt 

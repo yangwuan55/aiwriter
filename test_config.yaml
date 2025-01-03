@@ -22,6 +22,20 @@ preferences:
   - "善于结合网络流行文化元素"
   - "写作风格精炼，不堆砌辞藻"
 
+# 写作手法
+writing_style:
+  narrative_perspective: "第一人称"
+  tense: "现在时"
+  tone: "沉思"
+  narrative_technique:
+    - "意识流"
+    - "倒叙"
+    - "内心独白"
+  dialogue_style: "口语化"
+  description_focus:
+    - "心理活动"
+    - "环境氛围"
+
 # 小说设定
 novel_settings:
   title: "数字记忆"
